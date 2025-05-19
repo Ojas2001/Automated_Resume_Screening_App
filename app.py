@@ -8,7 +8,7 @@ import os
 import docx
 
 if "MISTRAL_API_KEY" not in os.environ:
-    os.environ["MISTRAL_API_KEY"] = 'zQMwmcui0fmcy7QAYZfgKFeiXVZX6y2d'
+    os.environ["MISTRAL_API_KEY"] = 'Your_Mistral_api_key_here'
 
 llm = ChatMistralAI(
     model="mistral-large-latest",
