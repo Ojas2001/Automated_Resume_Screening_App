@@ -6,9 +6,13 @@ from langchain_mistralai import ChatMistralAI
 from langchain_core.prompts import ChatPromptTemplate
 import os
 import docx
+import base64
+from datetime import datetime
+from fpdf import FPDF
+import tempfile
 
 if "MISTRAL_API_KEY" not in os.environ:
-    os.environ["MISTRAL_API_KEY"] = 'Your_Mistral_api_key_here'
+    os.environ["MISTRAL_API_KEY"] = 'your_mistralai_key_here'
 
 llm = ChatMistralAI(
     model="mistral-large-latest",
@@ -39,6 +43,7 @@ def read_pdf(pdf_file):
         for i in range(num_pages):
             pdf_text_list.append(page[i].extract_text())
         pdf_text = '\n'.join(pdf_text_list)
+        print(pdf_text)
         return pdf_text
     except Exception as e:
         st.error(f"Error reading PDF file: {e}")
@@ -68,7 +73,7 @@ def run_llm(jd,resume):
                 3. Feedback: Provide a concise but informative response with:  
                 - Name of the candidate : "Candidate Name" \n
                 - Job Role : "Indicate the Position Title or Job role mentioned in the job description" \n
-                - Overall Fit: "Best fit" / "Good fit" / "Moderate fit" / "Poor fit" / "Bad Fit" (no strict percentages). \n
+                - Overall Fit: "Best fit" / "Good fit" / "Moderate fit" / "Poor fit" / "Bad Fit". \n
                 - Matches: List key skills/experience the candidate has.  \n
                 - Gaps: Mention critical missing qualifications (if any).  \n
                 - Additional Notes: Highlight any transferable skills or notable achievements.  
@@ -89,6 +94,10 @@ def run_llm(jd,resume):
             }
         )
         output = run.content
+        candidate_name_line = [line for line in output.split("\n") if "Candidate Name:" in line][0]
+        candidate_name = candidate_name_line.split("Candidate Name: ")[1].strip()
+        job_role_line = [line for line in output.split("\n") if "Job Role:" in line][0]
+        job_role = job_role_line.split("Job Role: ")[1].strip()
         fit_line = [line for line in output.split("\n") if "Overall Fit:" in line][0]
         fit_status = fit_line.split("Overall Fit: ")[1].strip()
         fit_colors = {
@@ -111,7 +120,7 @@ def run_llm(jd,resume):
             {colored_feedback}
             </div>
             """
-        return styled_feedback
+        return styled_feedback, output, candidate_name, job_role
     except Exception:
         pass
     return "OOPS! Something went wrong!!"
@@ -126,6 +135,44 @@ def upload_files():
         st.success("Both files uploaded successfully!")
         return jd_file, resume_file
     return None, None
+
+def show_pdf_download_button(pdf_path,candidate_name,job_role):
+    """Display PDF download button"""
+    with open(pdf_path, "rb") as f:
+        base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+    
+    download_link = (
+        f'<a href="data:application/pdf;base64,{base64_pdf}" '
+        f'download="resume_assessment_{candidate_name}_for_{job_role}.pdf">Download Report</a>'
+    )
+    st.markdown(download_link, unsafe_allow_html=True)
+    st.success("PDF report generated successfully!")
+
+def create_pdf_with_contents(candidate_name, job_role, output):
+    """Create PDF with complete file contents"""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=10)
+    
+    # Add title
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(200, 10, txt=f"Assessment for {candidate_name} for {job_role}", ln=2, align='C')
+    pdf.ln(10)
+    
+    # Process first file
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, txt="Result:", ln=1)
+    pdf.set_font("Arial", size=10)
+    
+    pdf.multi_cell(0, 6, txt=output)
+    pdf.ln(5)
+    
+    # Save to temporary file
+    temp_dir = tempfile.gettempdir()
+    pdf_path = os.path.join(temp_dir, f"resume_assessment_{candidate_name}_for_{job_role}.pdf")
+    pdf.output(pdf_path)
+    
+    return pdf_path
 
 def main():
     st.title("Automated Resume Screening Tool")
@@ -149,8 +196,10 @@ def main():
 
         if st.button("Get Results"):
             try:
-                result = run_llm(jd_text,resume_text)
+                result, output, candidate_name, job_role = run_llm(jd_text,resume_text)
                 st.markdown(result, unsafe_allow_html=True)
+                pdf_path = create_pdf_with_contents(candidate_name, job_role, output)
+                show_pdf_download_button(pdf_path,candidate_name, job_role)
             except Exception:
                 st.error("OOPS! There is some issue with the LLM API!!")   
     else:
