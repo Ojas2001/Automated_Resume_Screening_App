@@ -5,3 +5,4 @@ textract==1.6.3
 langchain==0.3.25
 langchain-core==0.3.60
 langchain-mistralai==0.2.10
+fpdf==1.7.2
