@@ -26,8 +26,8 @@ This application automates resume screening by comparing resumes with job descri
 - **Mistral AI** (LLM analysis)
 - **Python** (backend logic)
 - **Streamlit** (web interface)
-- **PyMuPDF**/**python-docx** (text extraction)
-- **ReportLab** (PDF generation)
+- **PyPDF2**/**python-docx** (text extraction)
+- **FPDF** (PDF generation)
 
 ## Installation
 
