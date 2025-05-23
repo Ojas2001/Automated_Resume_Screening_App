@@ -35,31 +35,21 @@ This application automates resume screening by comparing resumes with job descri
 2. **Install dependencies**
 3. **Set up Mistral AI**
 - Get API key from [Mistral AI platform](https://mistral.ai/)
-- Create `.env` file:
-  ```
-  MISTRAL_API_KEY=your_api_key_here
-  ```
 
 ## Usage
 
 1. **Start application**
 
 2. **Upload files**  
-<img src="https://via.placeholder.com/600x200?text=Upload+Interfac" width="400">
-
 - Resume (PDF/DOCX)
 - Job Description (PDF/DOCX)
 
 3. **View AI Analysis**  
-<img src="https://via.placeholder.com/600x400?text=Results+Dashboard" width="400">
-
 - Suitability percentage
 - Key match/mismatch points
 - Skill gap analysis
 
 4. **Download PDF Report**  
-<img src="https://via.placeholder.com/600x200?text=PDF+Report+Preview" width="400">
-
 - Professional format
 - Contains full analysis
 - Export/share capability
