@@ -54,4 +54,4 @@ This application automates resume screening by comparing resumes with job descri
 - Contains full analysis
 - Export/share capability
 
-**Link to the Streamlit App - **https://arstapp.streamlit.app/
+**Link to the Streamlit App -** https://arstapp.streamlit.app/
