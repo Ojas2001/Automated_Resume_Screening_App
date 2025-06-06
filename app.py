@@ -1,7 +1,6 @@
 import streamlit as st
 from docx import Document
 from PyPDF2 import PdfReader
-import textract
 from langchain_mistralai import ChatMistralAI
 from langchain_core.prompts import ChatPromptTemplate
 import os
@@ -10,9 +9,16 @@ import base64
 from datetime import datetime
 from fpdf import FPDF
 import tempfile
+import re
+import fitz
+import unicodedata
+from io import BytesIO
+import io
+import time
+
 
 if "MISTRAL_API_KEY" not in os.environ:
-    os.environ["MISTRAL_API_KEY"] = 'your_mistralai_key_here'
+    os.environ["MISTRAL_API_KEY"] = 'zQMwmcui0fmcy7QAYZfgKFeiXVZX6y2d'
 
 llm = ChatMistralAI(
     model="mistral-large-latest",
@@ -34,17 +40,49 @@ def get_file_type(file_path):
     return "Please upload PDF or WORD file only!!"
 
 @st.cache_data
+def clean_text(text: str) -> str:
+    try:
+        text = ''.join(ch for ch in text if unicodedata.category(ch) != 'Cf')
+        text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+        text = text.replace("’", "'").replace("‘", "'") \
+                .replace("“", '"').replace("”", '"') \
+                .replace("–", "-").replace("—", "-")
+        text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', text)
+        text = re.sub(r'[=_\-]{3,}', '', text)
+        text = re.sub(r'\n+', '\n', text)  # collapse multiple newlines
+        text = re.sub(r' +', ' ', text)    # collapse multiple spaces
+        text = text.strip()                # remove leading/trailing spaces
+        return text
+    except Exception as e:
+        st.error(f"Something wrong with the text!!: {e}")
+        return None
+
+# @st.cache_data
+# def read_pdf(pdf_file):
+#    try:
+#        reader = PdfReader(pdf_file)
+#         num_pages = len(reader.pages)
+#        pdf_text_list = [] 
+#         page = reader.pages
+#        for i in range(num_pages):
+#            pdf_text_list.append(page[i].extract_text())
+#        pdf_text = '\n'.join(pdf_text_list)
+#        return pdf_text
+#    except Exception as e:
+#        st.error(f"Error reading PDF file: {e}")
+#        return None
+
+@st.cache_data
 def read_pdf(pdf_file):
     try:
-        reader = PdfReader(pdf_file)
-        num_pages = len(reader.pages)
-        pdf_text_list = [] 
-        page = reader.pages
-        for i in range(num_pages):
-            pdf_text_list.append(page[i].extract_text())
-        pdf_text = '\n'.join(pdf_text_list)
-        print(pdf_text)
-        return pdf_text
+        pdf_file.seek(0)
+        pdf_bytes = pdf_file.read()
+        pdf_stream = io.BytesIO(pdf_bytes)
+        doc = fitz.open(stream=pdf_stream, filetype="pdf")
+        text = ''
+        for page in doc:
+            text += page.get_text("text") + '\n'
+        return text
     except Exception as e:
         st.error(f"Error reading PDF file: {e}")
         return None
@@ -68,8 +106,8 @@ def run_llm(jd,resume):
                 (
                     "human",
                 """Act as a recruiter evaluating whether a candidate’s resume aligns well with the given job description. Follow these steps:  
-                1. Key Requirements: Identify the must-have skills, qualifications, and experience from the job description.  
-                2. Resume Match: Analyze the resume to see which of these requirements are met. Note gaps.  
+                1. Key Requirements: Identify the must-have skills, qualifications, and experience from the job description. Prioritize hard requirements like certifications, years of experience, technical skills, and so on.
+                2. Resume Match: Analyze the resume to see which of these requirements are met. Note gaps. The candidate must meet **maximum and critical** requirements to qualify as a fit. Be stringent-ignore vague or loosely related skills.
                 3. Feedback: Provide a concise but informative response with:  
                 - Name of the candidate : "Candidate Name" \n
                 - Job Role : "Indicate the Position Title or Job role mentioned in the job description" \n
@@ -79,6 +117,7 @@ def run_llm(jd,resume):
                 - Additional Notes: Highlight any transferable skills or notable achievements.  
                 Please maintain a consistent format of output(Feedback only), given above.
                 Keep the response crisp (3-5 lines max), avoid fluff, and focus on recruiter's needs. 
+                Identify the critical requirements and required experience and then decide if the candiate is fit for the role or not.
                 Keep the response as a clean text only with appropriate newlines, and no formatting is needed, like (** **) and so on.
                 **Job Description**: {jd}  
                 ---  
@@ -86,6 +125,31 @@ def run_llm(jd,resume):
                 )
             ]
         )
+
+        prompt_1 = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "human",
+                    """Act as a recruiter critically evaluating a candidate's resume against the job description. Follow these steps:
+                    1. **Key Requirements**: Extract **non-negotiable skills, qualifications, and experience** from the job description. Prioritize hard requirements like certifications, years of experience, technical skills, and so on.
+                    2. **Strict Resume Match**: The candidate must meet **maximum and critical** requirements to qualify as a fit. Be stringent-ignore vague or loosely related skills.
+                    3. **Feedback**: Provide a structured, no-fluff response in the following format only:
+                    - Candidate Name: [Candidate's Name]
+                    - Job Role: [Extract Job role from  Job Description]
+                    - Overall Fit: "Best Fit" (90-100% match) / "Strong Fit" (80-90%) / "Moderate Fit" (60-80%) / "Weak Fit" (40-60%) / "Reject" (<40%)
+                    - Matches: List only **exact or close matches** (skill/experience directly from Job Description).
+                    - Gaps: Highlight **critical deficiences** like missing certifications, insufficient years in a core skill, and so on.
+                    - Additional Notes: Only mention **exceptional achievements** or **highly relevant transferable skills** that compensate for gaps.
+                    Please maintain a consistent format of output(Feedback only), given above.
+                    Keep the response crisp (3-5 lines max), avoid fluff, and focus on recruiter's needs. 
+                    Keep the response as a clean text only with appropriate newlines, and no formatting is needed, like (** **) and so on.
+                    **Job Description**: {jd}  
+                    ---  
+                    **Resume**: {resume}  """
+                )
+            ]
+        )
+
         chain = prompt | llm
         run = chain.invoke(
             {
@@ -127,13 +191,13 @@ def run_llm(jd,resume):
 
 def upload_files():
     file_types = ["pdf", "docx"]
-    st.markdown("### 📄 **Upload Job Description file here**")
-    jd_file = st.file_uploader("Upload Job Description file here", type=file_types, key="jd_file",label_visibility="collapsed")
-    st.markdown("### 📄 **Upload Candidate Resume File here**")
-    resume_file = st.file_uploader("Upload Candidate Resume File here", type=file_types, key="resume_file",label_visibility="collapsed")
-    if jd_file is not None and resume_file is not None:
+    st.markdown("### 📄 **Upload Job Description file here (Only one at a time)**")
+    jd_file = st.file_uploader("Upload Job Description file here (Only one at a time)", type=file_types, key="jd_file",label_visibility="collapsed")
+    st.markdown("### 📄 **Upload Candidate Resume File here (One or Multiple)**")
+    resume_files = st.file_uploader("Upload Candidate Resume File here (One or Multiple)", type=file_types, key="resume_file",label_visibility="collapsed",accept_multiple_files=True)
+    if jd_file is not None and len(resume_files) > 0:
         st.success("Both files uploaded successfully!")
-        return jd_file, resume_file
+        return jd_file, resume_files
     return None, None
 
 def show_pdf_download_button(pdf_path,candidate_name,job_role):
@@ -176,32 +240,50 @@ def create_pdf_with_contents(candidate_name, job_role, output):
 
 def main():
     st.title("Automated Resume Screening Tool")
-    jd_file,resume_file = upload_files()
-    jd_file_type = get_file_type(jd_file)
-    resume_file_type = get_file_type(resume_file)
-    if jd_file is not None and resume_file is not None:
-        if jd_file_type == "DOCX":
-            jd_text = read_word(jd_file)
-        elif jd_file_type == "PDF":
-            jd_text = read_pdf(jd_file)
-        else:
-            st.error("OOPS! Job Description File can't be read.")
+    jd_file,resume_files = upload_files()
+    if jd_file is not None and len(resume_files) > 0:
+            jd_file_type = get_file_type(jd_file)
+            resume_file_types_list = []
+            for r in resume_files:
+                resume_file_types_list.append(get_file_type(r))
 
-        if resume_file_type == "DOCX":
-            resume_text = read_word(resume_file)
-        elif resume_file_type == "PDF":
-            resume_text = read_pdf(resume_file)
-        else:
-            st.error("OOPS! Resume File can't be read.")
+            if jd_file_type == "DOCX":
+                jd_text = read_word(jd_file)
+                jd_text = clean_text(jd_text)
+            elif jd_file_type == "PDF":
+                jd_text = read_pdf(jd_file)
+                jd_text = clean_text(jd_text)
+            else:
+                st.error("OOPS! Job Description File can't be read.")
+            
+            resume_file_text_list = []
+            for resume_file,r in zip(resume_files,resume_file_types_list):
+                if r == "DOCX":
+                    resume_text = read_word(resume_file)
+                    resume_text = clean_text(resume_text)
+                    resume_file_text_list.append(resume_text)
+                elif r == "PDF":
+                    resume_text = read_pdf(resume_file)
+                    resume_text = clean_text(resume_text)
+                    resume_file_text_list.append(resume_text)
+                else:
+                    st.error("OOPS! Resume File can't be read.")
 
-        if st.button("Get Results"):
-            try:
-                result, output, candidate_name, job_role = run_llm(jd_text,resume_text)
-                st.markdown(result, unsafe_allow_html=True)
-                pdf_path = create_pdf_with_contents(candidate_name, job_role, output)
-                show_pdf_download_button(pdf_path,candidate_name, job_role)
-            except Exception:
-                st.error("OOPS! There is some issue with the LLM API!!")   
+            if st.button("Get Results"):
+                for resume_file, resume_text in zip(resume_files, resume_file_text_list):
+                    try:
+                        result, output, candidate_name, job_role = run_llm(jd_text, resume_text)
+
+                        with st.expander(f"📄 {candidate_name} - {resume_file.name}"):
+                            st.markdown(result, unsafe_allow_html=True)
+                            pdf_path = create_pdf_with_contents(candidate_name, job_role, output)
+                            show_pdf_download_button(pdf_path, candidate_name, job_role)
+
+                    except Exception:
+                        with st.expander(f"📄 Error - {resume_file.name}"):
+                            st.error("OOPS! There is some issue with the LLM API!!")
+                    time.sleep(10)
+
     else:
         st.warning("Please upload both the files to proceed!!")
 
