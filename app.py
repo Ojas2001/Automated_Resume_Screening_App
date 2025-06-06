@@ -18,7 +18,7 @@ import time
 
 
 if "MISTRAL_API_KEY" not in os.environ:
-    os.environ["MISTRAL_API_KEY"] = 'zQMwmcui0fmcy7QAYZfgKFeiXVZX6y2d'
+    os.environ["MISTRAL_API_KEY"] = 'your_api_key'
 
 llm = ChatMistralAI(
     model="mistral-large-latest",
